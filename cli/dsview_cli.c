@@ -47,6 +47,14 @@ static uint64_t g_sample_bytes = 0;
 static int g_unitsize = 2;	/* bytes per sample, set from channel count */
 static int g_dev_mode = 0;	/* LOGIC=0, DSO=1, ANALOG=2              */
 static uint64_t g_limit_samples = 0;	/* requested sample count for DSO stop    */
+static int g_hw_nch = 0;	/* hw mode channel count (FPGA data packing) */
+
+/* Leftover buffer for cross-to-parallel conversion.
+ * USB transfers and receive_transfer() truncation can deliver data
+ * that is not a whole multiple of nch*8 bytes (one cross-format group).
+ * We buffer partial groups here and prepend them to the next callback. */
+static uint8_t g_cross_leftover[MAX_CH * 8]; /* max group = 16 * 8 = 128 */
+static size_t g_cross_leftover_len = 0;
 
 /* -------------------------------------------------------------------------
  * Channel / trigger config (filled by argument parsing)
@@ -95,50 +103,91 @@ static void event_callback(int event)
 }
 
 /*
- * Convert cross-format logic data to parallel format.
+ * Convert one complete cross-format group to parallel format and write it.
  *
+ * One group = nch * 8 input bytes -> 64 parallel samples of unitsize bytes.
  * The DSLogic FPGA sends LA_CROSS_DATA: data interleaved at 8-byte (64-bit)
- * boundaries per enabled channel.  With N enabled channels, the byte stream
- * is:  [ch0 uint64][ch1 uint64]...[chN-1 uint64]  repeated.
+ * boundaries per enabled channel.  With N enabled channels, each group is:
+ *   [ch0 uint64][ch1 uint64]...[chN-1 uint64]
  * Each uint64 holds 64 consecutive sample bits for that one channel.
  *
  * Parallel format (what sigrok / our Python layer expects):
- * Each sample is g_unitsize bytes, with bit K = channel K value.
- * So 64 cross-format samples (N*8 input bytes) become 64 parallel samples
- * of g_unitsize bytes each (64 * g_unitsize output bytes).
+ * Each sample is unitsize bytes, with bit K = channel K value.
+ */
+static void convert_one_group(const uint8_t *gp, int nch, int unitsize,
+			      FILE *fp, uint64_t *written)
+{
+	uint8_t out[64 * 2]; /* max unitsize=2, 64 samples per group */
+
+	memset(out, 0, (size_t)(64 * unitsize));
+
+	for (int ch = 0; ch < nch; ch++) {
+		/* 8 bytes (64 bits) for this channel in this group */
+		const uint8_t *ch_bytes = gp + ch * 8;
+		int bit = ch; /* bit position in the output sample */
+
+		for (int b = 0; b < 64; b++) {
+			int byte_idx = b / 8;
+			int bit_idx = b % 8;
+			if (ch_bytes[byte_idx] & (1 << bit_idx)) {
+				out[b * unitsize + bit / 8]
+				    |= (uint8_t)(1 << (bit % 8));
+			}
+		}
+	}
+	fwrite(out, (size_t)unitsize, 64, fp);
+	*written += (uint64_t)(64 * unitsize);
+}
+
+/*
+ * Convert cross-format logic data to parallel format, handling partial
+ * groups across callbacks.
  *
- * We convert in-place in the callback and write parallel-format data to
- * the output file.
+ * USB transfers and receive_transfer() truncation (dsl.c:2403) can
+ * deliver data that is not a whole multiple of nch*8 bytes.  We buffer
+ * leftover bytes in g_cross_leftover[] and prepend them to the next
+ * callback's data before processing complete groups.
  */
 static void cross_to_parallel(const uint8_t *src, size_t src_len,
 			       int nch, int unitsize, FILE *fp,
 			       uint64_t *written)
 {
-	/* Each group: nch * 8 input bytes -> 64 parallel samples */
 	size_t grp_in = (size_t)nch * 8;
-	size_t n_groups = src_len / grp_in;
-	uint8_t out[64 * 2]; /* max unitsize=2, 64 samples per group */
+	const uint8_t *p = src;
+	size_t remain = src_len;
 
-	for (size_t g = 0; g < n_groups; g++) {
-		const uint8_t *gp = src + g * grp_in;
-		memset(out, 0, (size_t)(64 * unitsize));
-
-		for (int ch = 0; ch < nch; ch++) {
-			/* 8 bytes (64 bits) for this channel in this group */
-			const uint8_t *ch_bytes = gp + ch * 8;
-			int bit = ch; /* bit position in the output sample */
-
-			for (int b = 0; b < 64; b++) {
-				int byte_idx = b / 8;
-				int bit_idx = b % 8;
-				if (ch_bytes[byte_idx] & (1 << bit_idx)) {
-					out[b * unitsize + bit / 8]
-					    |= (uint8_t)(1 << (bit % 8));
-				}
-			}
+	/* If we have leftover bytes from the previous callback, try to
+	 * complete the partial group by appending from the new data. */
+	if (g_cross_leftover_len > 0) {
+		size_t need = grp_in - g_cross_leftover_len;
+		if (remain >= need) {
+			memcpy(g_cross_leftover + g_cross_leftover_len,
+			       p, need);
+			convert_one_group(g_cross_leftover, nch, unitsize,
+					  fp, written);
+			p += need;
+			remain -= need;
+			g_cross_leftover_len = 0;
+		} else {
+			/* Still not enough for a full group -- accumulate */
+			memcpy(g_cross_leftover + g_cross_leftover_len,
+			       p, remain);
+			g_cross_leftover_len += remain;
+			return;
 		}
-		fwrite(out, (size_t)unitsize, 64, fp);
-		*written += (uint64_t)(64 * unitsize);
+	}
+
+	/* Process all complete groups in the current buffer */
+	while (remain >= grp_in) {
+		convert_one_group(p, nch, unitsize, fp, written);
+		p += grp_in;
+		remain -= grp_in;
+	}
+
+	/* Save any remaining bytes for the next callback */
+	if (remain > 0) {
+		memcpy(g_cross_leftover, p, remain);
+		g_cross_leftover_len = remain;
 	}
 }
 
@@ -151,11 +200,11 @@ static void datafeed_callback(const struct sr_dev_inst *sdi,
 		    (const struct sr_datafeed_logic *)packet->payload;
 		if (logic && logic->data && logic->length > 0) {
 			if (logic->format == LA_CROSS_DATA &&
-			    g_n_enabled_chs > 0) {
+			    g_hw_nch > 0) {
 				cross_to_parallel(
 				    (const uint8_t *)logic->data,
 				    (size_t)logic->length,
-				    g_n_enabled_chs,
+				    g_hw_nch,
 				    g_unitsize,
 				    g_capture_file,
 				    &g_sample_bytes);
@@ -444,19 +493,27 @@ static void apply_trigger(void)
 
 static int setup_channels(int total_ch)
 {
-	/* Enable only the requested physical channels; name them if provided */
+	/* Enable ALL channels within the hardware mode range, matching
+	 * the DSView GUI behaviour.  The FPGA packs cross-format data
+	 * for every enabled channel.  Disabling a subset within the mode
+	 * causes the FPGA packing to differ from what cross_to_parallel()
+	 * expects (nch = g_hw_nch = mode channel count).
+	 *
+	 * Channels beyond the mode range are disabled.
+	 * User-requested channels get their names set. */
 	for (int ch = 0; ch < total_ch; ch++) {
-		gboolean en = FALSE;
+		gboolean en = (ch < g_hw_nch) ? TRUE : FALSE;
+		ds_enable_device_channel_index(ch, en);
+
+		/* Set name for user-requested channels */
 		int name_idx = -1;
 		for (int j = 0; j < g_n_enabled_chs; j++) {
 			if (g_enabled_chs[j] == ch) {
-				en = TRUE;
 				name_idx = j;
 				break;
 			}
 		}
-		ds_enable_device_channel_index(ch, en);
-		if (en && name_idx >= 0 && g_ch_names[name_idx][0])
+		if (name_idx >= 0 && g_ch_names[name_idx][0])
 			ds_set_device_channel_name(ch, g_ch_names[name_idx]);
 	}
 	return SR_OK;
@@ -667,6 +724,8 @@ static int cmd_capture(int dev_index, uint64_t samplerate, uint64_t limit_sample
 {
 	g_capture_done = g_capture_error = 0;
 	g_sample_bytes = 0;
+	g_cross_leftover_len = 0;
+	g_hw_nch = 0;
 	memset(g_ch_vdiv, 0, sizeof(g_ch_vdiv));
 	memset(g_ch_vfactor, 0, sizeof(g_ch_vfactor));
 	memset(g_ch_coupling, 0, sizeof(g_ch_coupling));
@@ -740,6 +799,21 @@ static int cmd_capture(int dev_index, uint64_t samplerate, uint64_t limit_sample
 			    (struct sr_list_item *)(uintptr_t) g_variant_get_uint64(cm_data);
 			g_variant_unref(cm_data);
 
+			/* The hw mode must cover ALL requested channel indices.
+			 * For contiguous channels 0-6 (count=7), max index is 6,
+			 * so min_hw_channels = 7.  For non-contiguous channels
+			 * like 0,3,7 (count=3), max index is 7, so
+			 * min_hw_channels = 8.  The mode must have >= this many
+			 * channels because the FPGA addresses channels by index. */
+			int max_ch_idx = 0;
+			for (int i = 0; i < g_n_enabled_chs; i++) {
+				if (g_enabled_chs[i] > max_ch_idx)
+					max_ch_idx = g_enabled_chs[i];
+			}
+			int min_hw_chs = max_ch_idx + 1;
+			if (min_hw_chs < g_n_enabled_chs)
+				min_hw_chs = g_n_enabled_chs;
+
 			/* Find the mode with the smallest channel count
 			 * that can still accommodate all requested channels.
 			 * Parse channel count from desc: "Use N Channels ..." */
@@ -760,7 +834,7 @@ static int cmd_capture(int dev_index, uint64_t samplerate, uint64_t limit_sample
 							nch = atoi(t + 2) + 1;
 					}
 				}
-				if (nch >= g_n_enabled_chs && nch < best_nch) {
+				if (nch >= min_hw_chs && nch < best_nch) {
 					best_nch = nch;
 					best_id = modes[i].id;
 				}
@@ -778,17 +852,18 @@ static int cmd_capture(int dev_index, uint64_t samplerate, uint64_t limit_sample
 		}
 	}
 
+	/* Store the hw channel mode count globally.  The FPGA packs cross-
+	 * format data for ALL enabled channels.  Like the DSView GUI, we
+	 * keep all channels in the mode enabled (not just user-requested
+	 * ones) so the FPGA packing matches our expectation exactly. */
+	g_hw_nch = ch_mode_num > 0 ? ch_mode_num : g_n_enabled_chs;
+
 	/* bytes-per-sample: DSO = 1 byte per channel (8-bit ADC),
 	 * LOGIC = use the hw channel mode's channel count for unitsize */
 	if (is_dso)
 		g_unitsize = 1;	/* 8-bit ADC, 1 byte per channel per sample */
-	else {
-		/* The FPGA always packs data based on the hardware channel
-		 * mode, not the number of user-enabled channels.  Use the
-		 * actual hw mode channel count for unitsize calculation. */
-		int hw_nch = ch_mode_num > 0 ? ch_mode_num : g_n_enabled_chs;
-		g_unitsize = (hw_nch <= 8) ? 1 : 2;
-	}
+	else
+		g_unitsize = (g_hw_nch <= 8) ? 1 : 2;
 
 	/* Samplerate -- sr_config_set() takes ownership of the GVariant
 	 * (ref_sink + unref), so we must NOT unref after the call. */
@@ -847,11 +922,13 @@ static int cmd_capture(int dev_index, uint64_t samplerate, uint64_t limit_sample
 	/* Channel enable / name.
 	 *
 	 * After the channel mode change, dsl_adjust_probes() may have
-	 * resized the probe list (e.g. 16 -> 8 for 3-channel mode).
-	 * Re-query the channel count and enable only the user-requested
-	 * channels.  The FPGA packs data in "cross" format: cycling
-	 * through enabled channels, 8 sample-bits per byte per channel.
-	 * dsl_en_ch_num() must match what the FPGA was told via ch_en. */
+	 * resized the probe list (e.g. 16 -> 8 for "Use 8 Channels").
+	 * Re-query the channel count and enable ALL channels within the
+	 * hw mode range (matching DSView GUI behaviour).  The FPGA packs
+	 * cross-format data for every enabled channel -- selectively
+	 * disabling channels within the mode causes the data packing to
+	 * differ from what cross_to_parallel() expects.
+	 * dsl_en_ch_num() will return g_hw_nch after setup_channels(). */
 	struct ds_device_full_info finfo;
 	memset(&finfo, 0, sizeof(finfo));
 	ds_get_actived_device_info(&finfo);
@@ -941,7 +1018,10 @@ static int cmd_capture(int dev_index, uint64_t samplerate, uint64_t limit_sample
 		return 1;
 	}
 	uint64_t hdr_sr = samplerate;
-	uint32_t hdr_ch = (uint32_t) g_n_enabled_chs;
+	/* Write the hw mode channel count so the Python layer computes
+	 * the correct unitsize for the parallel-format data we produce. */
+	uint32_t hdr_ch = is_dso ? (uint32_t)g_n_enabled_chs
+				 : (uint32_t)g_hw_nch;
 	fwrite(&hdr_sr, sizeof(hdr_sr), 1, g_capture_file);
 	fwrite(&hdr_ch, sizeof(hdr_ch), 1, g_capture_file);
 
