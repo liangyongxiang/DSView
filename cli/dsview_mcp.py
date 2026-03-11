@@ -762,6 +762,7 @@ def capture_logic(
     out_file: str = "",
     out_format: str = "bin",
     voltage_threshold: float = -1.0,
+    timeout: int = 180,
 ) -> str:
     """Capture logic-analyzer data from a DreamSourceLab device.
 
@@ -806,6 +807,9 @@ def capture_logic(
                          that support variable thresholds (e.g. DSLogic U3Pro16).
                          Default -1.0 = use device default (typically 1.0V).
                          Common values: 0.8 (LVCMOS), 1.0, 1.2, 1.5, 1.8, 2.5, 3.3.
+        timeout:         Maximum seconds to wait for dsview-cli to complete (default 180).
+                         Increase for long captures (e.g. waiting for an infrequent trigger).
+                         The process is killed and an error returned if the timeout expires.
 
     Returns:
         Capture status, channel map, trigger settings, and a 32-sample waveform
@@ -902,7 +906,7 @@ def capture_logic(
     if voltage_threshold >= 0.0:
         cli_args += ["-V", str(voltage_threshold)]
 
-    stdout, stderr, rc = _run_cli(*cli_args, timeout=180)
+    stdout, stderr, rc = _run_cli(*cli_args, timeout=timeout)
     result = _parse_json(stdout, stderr, rc, "capture")
 
     if not isinstance(result, dict) or not result.get("success"):
@@ -1071,6 +1075,7 @@ def capture_dso(
     trigger_pos: int = 50,
     out_file: str = "",
     out_format: str = "bin",
+    timeout: int = 180,
 ) -> str:
     """Capture analog waveform data from a DreamSourceLab oscilloscope.
 
@@ -1111,6 +1116,9 @@ def capture_dso(
         out_file:        Full path for .bin output. Auto-generated if empty.
         out_format:      Output format: 'bin' (default), 'csv' (voltage values),
                          'sr' (sigrok session), 'vcd', 'sigrok-binary'.
+        timeout:         Maximum seconds to wait for dsview-cli to complete (default 180).
+                         Increase for long captures (e.g. waiting for an infrequent trigger).
+                         The process is killed and an error returned if the timeout expires.
 
     Returns:
         Capture status, channel_map with analog metadata (vdiv, coupling,
@@ -1227,7 +1235,7 @@ def capture_dso(
         for part in _parse_dso_option(probe_factor, ch_list):
             cli_args += ["--probe", part]
 
-    stdout, stderr, rc = _run_cli(*cli_args, timeout=180)
+    stdout, stderr, rc = _run_cli(*cli_args, timeout=timeout)
     result = _parse_json(stdout, stderr, rc, "capture_dso")
 
     if not isinstance(result, dict) or not result.get("success"):
