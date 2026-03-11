@@ -692,6 +692,11 @@ install(DIRECTORY libsigrokdecode4DSL/decoders DESTINATION share/libsigrokdecode
 install(DIRECTORY lang DESTINATION share/DSView)
 
 #===============================================================================
+#= dsview-cli (headless command-line tool)
+#-------------------------------------------------------------------------------
+add_subdirectory(cli)
+
+#===============================================================================
 #= Packaging (handled by CPack)
 #-------------------------------------------------------------------------------
 
