@@ -1,0 +1,51 @@
+set(libsigrok4DSL_SOURCES
+    libsigrok4DSL/version.c
+    libsigrok4DSL/strutil.c
+    libsigrok4DSL/std.c
+    libsigrok4DSL/session_driver.c
+    libsigrok4DSL/session.c
+    libsigrok4DSL/log.c
+    libsigrok4DSL/hwdriver.c
+    libsigrok4DSL/error.c
+    libsigrok4DSL/backend.c
+    libsigrok4DSL/output/output.c
+    libsigrok4DSL/input/input.c
+    libsigrok4DSL/hardware/demo/demo.c
+    libsigrok4DSL/input/in_binary.c
+    libsigrok4DSL/input/in_vcd.c
+    libsigrok4DSL/input/in_wav.c
+    libsigrok4DSL/output/csv.c
+    libsigrok4DSL/output/gnuplot.c
+    libsigrok4DSL/output/srzip.c
+    libsigrok4DSL/output/vcd.c
+    libsigrok4DSL/hardware/DSL/dslogic.c
+    libsigrok4DSL/hardware/common/usb.c
+    libsigrok4DSL/hardware/common/ezusb.c
+    libsigrok4DSL/trigger.c
+    libsigrok4DSL/dsdevice.c
+    libsigrok4DSL/hardware/DSL/dscope.c
+    libsigrok4DSL/hardware/DSL/command.c
+    libsigrok4DSL/hardware/DSL/dsl.c
+    libsigrok4DSL/lib_main.c
+)
+
+set(libsigrokdecode4DSL_SOURCES
+    libsigrokdecode4DSL/type_decoder.c
+    libsigrokdecode4DSL/srd.c
+    libsigrokdecode4DSL/module_sigrokdecode.c
+    libsigrokdecode4DSL/decoder.c
+    libsigrokdecode4DSL/error.c
+    libsigrokdecode4DSL/exception.c
+    libsigrokdecode4DSL/instance.c
+    libsigrokdecode4DSL/log.c
+    libsigrokdecode4DSL/session.c
+    libsigrokdecode4DSL/util.c
+    libsigrokdecode4DSL/version.c
+)
+
+set(common_SOURCES
+    common/minizip/zip.c
+    common/minizip/unzip.c
+    common/minizip/ioapi.c
+    common/log/xlog.c
+)

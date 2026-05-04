@@ -94,9 +94,10 @@ bool AppControl::Init()
 
     srd_log_set_context(dsv_log_context());
 
-#if defined(_WIN32) && defined(DEBUG_INFO)
-    //able run debug with qtcreator
-    QString pythonHome = "c:/python";
+#ifdef _WIN32
+    // Prefer an app-relative embedded Python runtime on Windows so the
+    // installed tree can run without an external MinGW/Python environment.
+    QString pythonHome = GetAppDataDir() + "/Python";
     QDir pydir;
     if (pydir.exists(pythonHome)){
         const wchar_t *pyhome = reinterpret_cast<const wchar_t*>(pythonHome.utf16());

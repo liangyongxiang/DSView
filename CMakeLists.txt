@@ -105,6 +105,10 @@ message(STATUS "	 libraries:" ${GLIB_LIBDIR}/libglib-2.0.*)
 include_directories(${GLIB_INCLUDE_DIRS})
 link_directories(${GLIB_LIBDIR})
 
+if(WIN32 AND STATIC_PKGDEPS_LIBS)
+	add_definitions(-DGLIB_STATIC_COMPILATION -DGOBJECT_STATIC_COMPILATION -DGIO_STATIC_COMPILATION)
+endif()
+
 #===============================================================================
 #= python3
 #-------------------------------------------------------------------------------
@@ -117,6 +121,9 @@ if (Python3_FOUND)
 	message(STATUS "	 libraries:" ${Python3_LIBRARIES})
 	include_directories(${Python3_INCLUDE_DIRS})
 	set(PY_LIB ${Python3_LIBRARIES})
+	set(DS_PYTHON_INCLUDE_DIR ${Python3_INCLUDE_DIRS})
+	set(DS_PYTHON_VERSION_MAJOR ${Python3_VERSION_MAJOR})
+	set(DS_PYTHON_VERSION_MINOR ${Python3_VERSION_MINOR})
 else()
      find_package(PythonLibs 3 QUIET)
 
@@ -126,6 +133,10 @@ else()
 	message(STATUS "	 libraries:" ${PYTHON_LIBRARIES})
 	include_directories(${PYTHON_INCLUDE_DIRS})
 	set(PY_LIB ${PYTHON_LIBRARIES})
+	set(DS_PYTHON_INCLUDE_DIR ${PYTHON_INCLUDE_DIRS})
+	string(REPLACE "." ";" DS_PYTHON_VERSION_PARTS ${PYTHONLIBS_VERSION_STRING})
+	list(GET DS_PYTHON_VERSION_PARTS 0 DS_PYTHON_VERSION_MAJOR)
+	list(GET DS_PYTHON_VERSION_PARTS 1 DS_PYTHON_VERSION_MINOR)
      else()
      	message(FATAL_ERROR  "Please install lib python3!")
      endif()
@@ -177,19 +188,22 @@ include_directories(${ZLIB_INCLUDE_DIRS})
 #= Qt5 or Qt6
 #-------------------------------------------------------------------------------
 
+if(WIN32 AND STATIC_PKGDEPS_LIBS)
+	set(DSVIEW_ORIG_CMAKE_FIND_LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
+	set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+endif()
+
 find_package(Qt5Core QUIET)
 
 if(Qt5Core_FOUND)
 	message("----- Qt5:")
 	message(STATUS "	 includes:" ${Qt5Core_INCLUDE_DIRS})
-	#find_package(Qt5WinExtras REQUIRED)
+	find_package(Qt5WinExtras REQUIRED)
 	find_package(Qt5Widgets REQUIRED)
 	find_package(Qt5Gui REQUIRED)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${Qt5Widgets_EXECUTABLE_COMPILE_FLAGS}")
-	#set(QT_INCLUDE_DIRS ${Qt5Gui_INCLUDE_DIRS} ${Qt5Widgets_INCLUDE_DIRS} ${Qt5WinExtras_INCLUDE_DIRS})
-	#set(QT_LIBRARIES Qt5::Gui Qt5::Widgets Qt5::WinExtras)
-	set(QT_INCLUDE_DIRS ${Qt5Gui_INCLUDE_DIRS} ${Qt5Widgets_INCLUDE_DIRS})
-	set(QT_LIBRARIES Qt5::Gui Qt5::Widgets)
+	set(QT_INCLUDE_DIRS ${Qt5Gui_INCLUDE_DIRS} ${Qt5Widgets_INCLUDE_DIRS} ${Qt5WinExtras_INCLUDE_DIRS})
+	set(QT_LIBRARIES Qt5::Gui Qt5::Widgets Qt5::WinExtras)
 	add_definitions(${Qt5Gui_DEFINITIONS} ${Qt5Widgets_DEFINITIONS})
 else()
 	find_package(Qt6Core QUIET)
@@ -210,6 +224,10 @@ if(NOT Qt5Core_FOUND AND NOT Qt6Core_FOUND)
 	message("Error!The qt5 or qt6 can't find, if them has been installed, please append the install path to CMAKE_PREFIX_PATH, the command as:")
 	message("list(APPEND CMAKE_PREFIX_PATH \"xxx install path\")" )
 	message(FATAL_ERROR  "Can't find Qt5 or Qt6!")
+endif()
+
+if(WIN32 AND STATIC_PKGDEPS_LIBS)
+	set(CMAKE_FIND_LIBRARY_SUFFIXES ${DSVIEW_ORIG_CMAKE_FIND_LIBRARY_SUFFIXES})
 endif()
 
 #===============================================================================
@@ -550,9 +568,18 @@ set(DSView_RESOURCES
 
 
 if(WIN32)
+	add_definitions(-DUNICODE -D_UNICODE)
 	# Use the DSView icon for the DSView.exe executable.
 	set(CMAKE_RC_COMPILE_OBJECT "${CMAKE_RC_COMPILER} -O coff -I${CMAKE_CURRENT_SOURCE_DIR} <SOURCE> <OBJECT>")
 	enable_language(RC)
+	list(APPEND DSView_SOURCES
+		DSView/pv/winnativewidget.cpp
+		DSView/pv/winshadow.cpp
+	)
+	list(APPEND DSView_HEADERS
+		DSView/pv/winnativewidget.h
+		DSView/pv/winshadow.h
+	)
 	# app icon
         list(APPEND DSView_SOURCES applogo.rc)
 endif()
@@ -610,25 +637,23 @@ add_compile_options(-O3)
 
 
 set(DSVIEW_LINK_LIBS
-	-lz
-	-lglib-2.0
 	${CMAKE_THREAD_LIBS_INIT}
 	${QT_LIBRARIES}
 	${LIBUSB_1_LIBRARIES}
 	${FFTW_LIBRARIES}
+	${ZLIB_LIBRARIES}
 	${PY_LIB}
 )
 
 if(STATIC_PKGDEPS_LIBS)
-	link_directories(${PKGDEPS_STATIC_LIBRARY_DIRS})
-	list(APPEND DSVIEW_LINK_LIBS ${PKGDEPS_STATIC_LIBRARIES})
-if(WIN32)
-	# Workaround for a MinGW linking issue.
-	list(APPEND PULSEVIEW_LINK_LIBS "-llzma -llcms2")
-endif()
+	link_directories(${GLIB_STATIC_LIBRARY_DIRS})
+	list(APPEND DSVIEW_LINK_LIBS "-Wl,-Bstatic" ${GLIB_STATIC_LIBRARIES} iconv "-Wl,-Bdynamic")
+	if(WIN32)
+		list(APPEND DSVIEW_LINK_LIBS setupapi advapi32 "-Wl,-Bstatic")
+	endif()
 else()
-	link_directories(${PKGDEPS_LIBRARY_DIRS})
-	list(APPEND DSVIEW_LINK_LIBS ${PKGDEPS_LIBRARIES})
+	link_directories(${GLIB_LIBRARY_DIRS})
+	list(APPEND DSVIEW_LINK_LIBS ${GLIB_LIBRARIES})
 endif()
 
 add_executable(${PROJECT_NAME}
@@ -645,7 +670,11 @@ target_link_libraries(${PROJECT_NAME} ${DSVIEW_LINK_LIBS})
 
 if(WIN32)
 # Pass -mwindows so that no "DOS box" will open when PulseView is started.
-set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-mwindows")
+if(STATIC_PKGDEPS_LIBS)
+	set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-mwindows -static -static-libgcc -static-libstdc++")
+else()
+	set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-mwindows")
+endif()
 endif()
 
 if(ENABLE_COTIRE)
@@ -688,8 +717,79 @@ install(FILES NEWS31 DESTINATION share/DSView RENAME NEWS31)
 install(FILES ug25.pdf DESTINATION share/DSView RENAME ug25.pdf)
 install(FILES ug31.pdf DESTINATION share/DSView RENAME ug31.pdf)
 
-install(DIRECTORY libsigrokdecode4DSL/decoders DESTINATION share/libsigrokdecode4DSL)
+if(WIN32)
+	# The current public Windows packaging path does not ship the IRMP decoder.
+	# It requires ctypes + irmp.dll, which the open-source install tree does not
+	# currently stage, so exclude it from the Windows install set for bring-up.
+	install(DIRECTORY libsigrokdecode4DSL/decoders DESTINATION share/libsigrokdecode4DSL
+		PATTERN "ir_irmp" EXCLUDE)
+else()
+	install(DIRECTORY libsigrokdecode4DSL/decoders DESTINATION share/libsigrokdecode4DSL)
+endif()
 install(DIRECTORY lang DESTINATION share/DSView)
+
+if(WIN32)
+	# Stage the minimal runtime closure into the install tree so DSView and
+	# dsview-cli do not depend on an external MinGW/Python installation.
+	get_filename_component(DS_PYTHON_INCLUDE_DIR_ABS "${DS_PYTHON_INCLUDE_DIR}" ABSOLUTE)
+	get_filename_component(DS_PYTHON_PREFIX "${DS_PYTHON_INCLUDE_DIR_ABS}" DIRECTORY)
+	get_filename_component(DS_PYTHON_PREFIX "${DS_PYTHON_PREFIX}" DIRECTORY)
+	set(DS_PYTHON_BIN_DIR "${DS_PYTHON_PREFIX}/bin")
+	set(DS_PYTHON_LIB_DIR "${DS_PYTHON_PREFIX}/lib")
+	set(DS_PYTHON_STDLIB_ZIP "${DS_PYTHON_LIB_DIR}/python${DS_PYTHON_VERSION_MAJOR}${DS_PYTHON_VERSION_MINOR}.zip")
+	set(DS_PYTHON_STDLIB_DIR "${DS_PYTHON_LIB_DIR}/python${DS_PYTHON_VERSION_MAJOR}.${DS_PYTHON_VERSION_MINOR}")
+	set(DS_RUNTIME_DLLS
+		libpython${DS_PYTHON_VERSION_MAJOR}.${DS_PYTHON_VERSION_MINOR}.dll
+		libgcc_s_seh-1.dll
+		libffi-8.dll
+		libusb-1.0.dll
+		zlib1.dll
+		libglib-2.0-0.dll
+		libwinpthread-1.dll
+		libintl-8.dll
+		libpcre2-8-0.dll
+		libiconv-2.dll)
+
+	foreach(DS_RUNTIME_DLL ${DS_RUNTIME_DLLS})
+		if(EXISTS "${DS_PYTHON_BIN_DIR}/${DS_RUNTIME_DLL}")
+			install(FILES "${DS_PYTHON_BIN_DIR}/${DS_RUNTIME_DLL}" DESTINATION bin)
+		endif()
+	endforeach()
+
+	if(EXISTS "${DS_PYTHON_STDLIB_ZIP}")
+		install(FILES "${DS_PYTHON_STDLIB_ZIP}" DESTINATION bin/Python/lib)
+	endif()
+
+	if(EXISTS "${DS_PYTHON_STDLIB_DIR}")
+		install(DIRECTORY "${DS_PYTHON_STDLIB_DIR}" DESTINATION bin/Python/lib
+			PATTERN "site-packages" EXCLUDE)
+	endif()
+endif()
+
+if(WIN32)
+	# Keep build.dir self-contained as well. Users often launch DSView.exe
+	# directly from there during bring-up, and later distribution work also
+	# wants copied runtime assets instead of source-tree junctions.
+	set(DS_BUILD_STAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build.dir")
+	set(DS_STAGE_BUILD_DIR_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/stage_build_dir.cmake")
+	set(DSVIEW_CLI_POST_BUILD_STAGE_SCRIPT "${DS_STAGE_BUILD_DIR_SCRIPT}")
+	configure_file(
+		"${CMAKE_CURRENT_SOURCE_DIR}/CMake/stage_build_dir.cmake.in"
+		"${DS_STAGE_BUILD_DIR_SCRIPT}"
+		@ONLY)
+endif()
+
+#===============================================================================
+#= dsview-cli (headless command-line tool)
+#-------------------------------------------------------------------------------
+add_subdirectory(cli)
+
+if(WIN32)
+	add_custom_target(stage-build-dir
+		COMMAND "${CMAKE_COMMAND}" -P "${DS_STAGE_BUILD_DIR_SCRIPT}"
+		DEPENDS dsview-cli
+		COMMENT "Stage DSView runtime into build.dir")
+endif()
 
 #===============================================================================
 #= Packaging (handled by CPack)
@@ -716,5 +816,3 @@ if(ENABLE_TESTS)
 	enable_testing()
 	add_test(test ${CMAKE_CURRENT_BINARY_DIR}/DSView/test/DSView-test)
 endif(ENABLE_TESTS)
-
-

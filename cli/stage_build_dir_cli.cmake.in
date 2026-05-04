@@ -1,0 +1,53 @@
+cmake_minimum_required(VERSION 3.10)
+
+set(DS_STAGE_DIR "@DS_BUILD_STAGE_DIR@")
+set(DS_RES_SRC "@DSVIEW_ROOT_DIR@/DSView/res")
+set(DS_DEMO_SRC "@DSVIEW_ROOT_DIR@/DSView/demo")
+set(DS_DECODERS_SRC "@DSVIEW_ROOT_DIR@/libsigrokdecode4DSL/decoders")
+set(DS_PYTHON_BIN_DIR "@DS_PYTHON_BIN_DIR@")
+set(DS_PYTHON_STDLIB_ZIP "@DS_PYTHON_STDLIB_ZIP@")
+set(DS_PYTHON_STDLIB_DIR "@DS_PYTHON_STDLIB_DIR@")
+set(DS_RUNTIME_DLLS "@DS_RUNTIME_DLLS@")
+
+function(ds_remove_path path)
+    if(EXISTS "${path}" OR IS_SYMLINK "${path}")
+        file(REMOVE_RECURSE "${path}")
+    endif()
+endfunction()
+
+function(ds_stage_directory source_dir staged_name)
+    set(stage_path "${DS_STAGE_DIR}/${staged_name}")
+    ds_remove_path("${stage_path}")
+    if(EXISTS "${source_dir}")
+        file(COPY "${source_dir}" DESTINATION "${DS_STAGE_DIR}")
+    endif()
+endfunction()
+
+file(MAKE_DIRECTORY "${DS_STAGE_DIR}")
+
+ds_stage_directory("${DS_RES_SRC}" "res")
+ds_stage_directory("${DS_DEMO_SRC}" "demo")
+
+ds_remove_path("${DS_STAGE_DIR}/decoders")
+if(EXISTS "${DS_DECODERS_SRC}")
+    file(COPY "${DS_DECODERS_SRC}" DESTINATION "${DS_STAGE_DIR}"
+        PATTERN "ir_irmp" EXCLUDE)
+endif()
+
+foreach(DS_RUNTIME_DLL IN LISTS DS_RUNTIME_DLLS)
+    if(EXISTS "${DS_PYTHON_BIN_DIR}/${DS_RUNTIME_DLL}")
+        file(COPY "${DS_PYTHON_BIN_DIR}/${DS_RUNTIME_DLL}" DESTINATION "${DS_STAGE_DIR}")
+    endif()
+endforeach()
+
+ds_remove_path("${DS_STAGE_DIR}/Python")
+file(MAKE_DIRECTORY "${DS_STAGE_DIR}/Python/lib")
+
+if(EXISTS "${DS_PYTHON_STDLIB_ZIP}")
+    file(COPY "${DS_PYTHON_STDLIB_ZIP}" DESTINATION "${DS_STAGE_DIR}/Python/lib")
+endif()
+
+if(EXISTS "${DS_PYTHON_STDLIB_DIR}")
+    file(COPY "${DS_PYTHON_STDLIB_DIR}" DESTINATION "${DS_STAGE_DIR}/Python/lib"
+        PATTERN "site-packages" EXCLUDE)
+endif()
