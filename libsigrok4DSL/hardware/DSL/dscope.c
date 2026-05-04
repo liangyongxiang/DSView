@@ -163,6 +163,8 @@ static struct DSL_context *DSCope_dev_new(const struct DSL_profile *prof)
     devc->cali = FALSE;
     devc->trigger_margin = 8;
     devc->trigger_channel = 0;
+    devc->pipe_fds[0] = -1;
+    devc->pipe_fds[1] = -1;
     devc->rle_mode = FALSE;
     devc->status = DSL_FINISH;
     devc->bw_limit = BW_FULL;
@@ -1901,10 +1903,19 @@ static void remove_sources(struct DSL_context *devc)
 {
     int i;
     sr_info("%s: remove fds from polling", __func__);
+#ifdef _WIN32
+    if (devc->channel) {
+        sr_session_source_remove_channel(devc->channel);
+        return;
+    }
+#endif
     /* Remove fds from polling. */
+    if (!devc->usbfd)
+        return;
     for (i = 0; devc->usbfd[i] != -1; i++)
         sr_source_remove(devc->usbfd[i]);
     g_free(devc->usbfd);
+    devc->usbfd = NULL;
 }
 
 static int receive_data(int fd, int revents, const struct sr_dev_inst *sdi)
@@ -2088,6 +2099,12 @@ static int dev_acquisition_start(struct sr_dev_inst *sdi, void *cb_data)
     }
 
     /* setup callback function for data transfer */
+#ifdef _WIN32
+    ret = sr_session_source_add_channel(devc->channel,
+            G_IO_IN | G_IO_ERR, dsl_get_timeout(sdi), receive_data, sdi);
+    if (ret != SR_OK)
+        return ret;
+#else
     lupfd = libusb_get_pollfds(drvc->sr_ctx->libusb_ctx);
     for (i = 0; lupfd[i]; i++);
 
@@ -2103,7 +2120,8 @@ static int dev_acquisition_start(struct sr_dev_inst *sdi, void *cb_data)
     }
 
     devc->usbfd[i] = -1;
-    g_free(lupfd);
+    libusb_free_pollfds(lupfd);
+#endif
 
     wr_cmd.header.dest = DSL_CTL_START;
     wr_cmd.header.size = 0;

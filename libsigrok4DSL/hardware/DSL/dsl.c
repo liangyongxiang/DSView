@@ -26,6 +26,10 @@
 #include <math.h>
 #include <assert.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 #undef LOG_PREFIX
 #define LOG_PREFIX "dsl: "
@@ -1968,15 +1972,39 @@ SR_PRIV int dsl_dev_open(struct sr_dev_driver *di, struct sr_dev_inst *sdi, gboo
         }
     }
 
+#ifdef _WIN32
+    if (!devc->channel) {
+        if (_pipe(devc->pipe_fds, 4096, _O_BINARY) != 0) {
+            sr_err("%s: _pipe() failed", __func__);
+            dsl_dev_close(sdi);
+            return SR_ERR;
+        }
+        devc->channel = g_io_channel_win32_new_fd(devc->pipe_fds[0]);
+        if (!devc->channel) {
+            _close(devc->pipe_fds[0]);
+            _close(devc->pipe_fds[1]);
+            devc->pipe_fds[0] = -1;
+            devc->pipe_fds[1] = -1;
+            dsl_dev_close(sdi);
+            return SR_ERR;
+        }
+        g_io_channel_set_flags(devc->channel, G_IO_FLAG_NONBLOCK, NULL);
+        g_io_channel_set_encoding(devc->channel, NULL, NULL);
+        g_io_channel_set_buffered(devc->channel, FALSE);
+    }
+#endif
+
     return SR_OK;
 }
 
 SR_PRIV int dsl_dev_close(struct sr_dev_inst *sdi)
 {
     struct sr_usb_dev_inst *usb;
+    struct DSL_context *devc;
 
     assert(sdi);
 
+    devc = sdi->priv;
     usb = sdi->conn;
 
     if (usb == NULL){
@@ -1997,6 +2025,22 @@ SR_PRIV int dsl_dev_close(struct sr_dev_inst *sdi)
         libusb_close(usb->devhdl);
     }
     //sr_info("------------Close the libusb_device_handle:%p, struct:%p", usb->devhdl, usb);
+
+#ifdef _WIN32
+    if (devc && devc->channel) {
+        g_io_channel_shutdown(devc->channel, FALSE, NULL);
+        g_io_channel_unref(devc->channel);
+        devc->channel = NULL;
+    }
+    if (devc && devc->pipe_fds[0] >= 0) {
+        _close(devc->pipe_fds[0]);
+        devc->pipe_fds[0] = -1;
+    }
+    if (devc && devc->pipe_fds[1] >= 0) {
+        _close(devc->pipe_fds[1]);
+        devc->pipe_fds[1] = -1;
+    }
+#endif
 
     usb->devhdl = NULL;
     sdi->status = SR_ST_INACTIVE;
