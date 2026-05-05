@@ -125,6 +125,21 @@ static int wait_for_device_init(void)
 	return -1;
 }
 
+static void abandon_library_for_process_exit(struct cli_selected_device *device)
+{
+	if (!device || !device->owns_library)
+		return;
+
+	/*
+	 * dsview-cli is a one-shot process.  The full DSView library shutdown
+	 * waits for global hotplug/device teardown and can block after a live
+	 * DSLogic acquisition has already stopped and produced the requested
+	 * output.  Let process teardown reclaim the library globals so command
+	 * completion is not delayed by GUI-oriented background cleanup.
+	 */
+	device->owns_library = FALSE;
+}
+
 int cli_device_selected_query_info_silent(struct ds_device_base_info *list,
 					  int count, int dev_index,
 					  struct ds_device_full_info *info)
@@ -173,8 +188,7 @@ void cli_device_selected_close(struct cli_selected_device *device)
 
 	if (device->virtual_handle != NULL_HANDLE)
 		ds_remove_device(device->virtual_handle);
-	if (device->owns_library)
-		ds_lib_exit();
+	abandon_library_for_process_exit(device);
 
 	cli_device_selected_reset(device);
 }
