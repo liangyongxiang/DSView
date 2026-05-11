@@ -41,7 +41,10 @@ static struct cli_support_json_value *build_stack_summary_value(
 
 static struct cli_support_json_value *build_decode_summary_result_value(
 	gboolean source_is_live, const char *source_label, GPtrArray *stacks,
-	guint64 total_rows, guint64 total_annotations)
+	guint64 total_rows, guint64 total_annotations,
+	gboolean has_decode_window,
+	uint64_t decode_start_sample, uint64_t decode_end_sample,
+	uint64_t samplerate)
 {
 	struct cli_support_json_value *result = cli_support_json_new_object();
 	struct cli_support_json_value *stack_array;
@@ -85,6 +88,20 @@ static struct cli_support_json_value *build_decode_summary_result_value(
 	}
 
 	cli_support_json_object_set(result, "stacks", stack_array);
+
+	if (has_decode_window && samplerate > 0) {
+		cli_support_json_object_set_uint64(result,
+			"decode_window_start_sample", decode_start_sample);
+		cli_support_json_object_set_uint64(result,
+			"decode_window_end_sample", decode_end_sample);
+		cli_support_json_object_set_uint64(result,
+			"decode_window_start_time_ns",
+			decode_start_sample * 1000000000ULL / samplerate);
+		cli_support_json_object_set_uint64(result,
+			"decode_window_end_time_ns",
+			decode_end_sample * 1000000000ULL / samplerate);
+	}
+
 	return result;
 }
 
@@ -93,14 +110,22 @@ int cli_decode_summary_write_json(const char *json_path,
 			      const char *source_label,
 			      GPtrArray *stacks,
 			      guint64 total_rows,
-			      guint64 total_annotations)
+			      guint64 total_annotations,
+			      gboolean has_decode_window,
+			      uint64_t decode_start_sample,
+			      uint64_t decode_end_sample,
+			      uint64_t samplerate)
 {
 	struct cli_support_json_value *result;
 	int rc;
 
 	result = build_decode_summary_result_value(source_is_live, source_label,
 						      stacks, total_rows,
-						      total_annotations);
+						      total_annotations,
+						      has_decode_window,
+						      decode_start_sample,
+						      decode_end_sample,
+						      samplerate);
 	if (!result)
 		return -1;
 

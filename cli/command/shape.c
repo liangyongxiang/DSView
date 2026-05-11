@@ -94,6 +94,7 @@ static int unsupported_for_scan(const struct cli_option_state *opts)
 	       has_text(opts->output_format) || has_text(opts->samples) ||
 	       has_text(opts->time) || opts->decode_outputs ||
 	       has_text(opts->meta_file) || has_text(opts->trig_pos_arg) ||
+	       has_text(opts->decode_start) || has_text(opts->decode_end) ||
 	       opts->show || opts->gets || opts->set;
 }
 
@@ -104,6 +105,7 @@ static int unsupported_for_show(const struct cli_option_state *opts)
 	       has_text(opts->output_format) || has_text(opts->samples) ||
 	       has_text(opts->time) || opts->decode_outputs ||
 	       has_text(opts->meta_file) || has_text(opts->trig_pos_arg) ||
+	       has_text(opts->decode_start) || has_text(opts->decode_end) ||
 	       opts->scan_devs || opts->gets || opts->set;
 }
 
@@ -114,6 +116,7 @@ static int unsupported_for_get(const struct cli_option_state *opts)
 	       has_text(opts->output_format) || has_text(opts->samples) ||
 	       has_text(opts->time) || opts->decode_outputs ||
 	       has_text(opts->meta_file) || has_text(opts->trig_pos_arg) ||
+	       has_text(opts->decode_start) || has_text(opts->decode_end) ||
 	       opts->scan_devs || opts->show || opts->set;
 }
 
@@ -124,6 +127,7 @@ static int unsupported_for_set(const struct cli_option_state *opts)
 	       has_text(opts->output_format) || has_text(opts->samples) ||
 	       has_text(opts->time) || opts->decode_outputs ||
 	       has_text(opts->meta_file) || has_text(opts->trig_pos_arg) ||
+	       has_text(opts->decode_start) || has_text(opts->decode_end) ||
 	       opts->scan_devs || opts->show || opts->gets;
 }
 
@@ -131,6 +135,7 @@ static int unsupported_for_live_capture(const struct cli_option_state *opts)
 {
 	return has_text(opts->input_file) || opts->pd_stacks ||
 	       opts->decode_outputs || opts->scan_devs || opts->show ||
+	       has_text(opts->decode_start) || has_text(opts->decode_end) ||
 	       opts->gets || opts->set;
 }
 
@@ -146,6 +151,7 @@ static int unsupported_for_offline_export(const struct cli_option_state *opts)
 	return has_text(opts->drv) || opts->configs || has_text(opts->samples) ||
 	       has_text(opts->time) || opts->pd_stacks || opts->decode_outputs ||
 	       has_text(opts->meta_file) || has_text(opts->trig_pos_arg) ||
+	       has_text(opts->decode_start) || has_text(opts->decode_end) ||
 	       opts->scan_devs || opts->show || opts->gets || opts->set;
 }
 
@@ -194,6 +200,8 @@ int cli_command_shape_build(struct cli_command_shape *shape,
 	shape->json_file = opts->json_file;
 	shape->channels = opts->channels;
 	shape->trig_pos_arg = opts->trig_pos_arg;
+	shape->decode_start = opts->decode_start;
+	shape->decode_end = opts->decode_end;
 	shape->gets = opts->gets;
 	shape->configs = opts->configs;
 	shape->pd_stacks = opts->pd_stacks;

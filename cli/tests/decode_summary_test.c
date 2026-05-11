@@ -95,7 +95,8 @@ static void test_write_decode_summary_live(void)
 
 	expect_true("write_decode_summary_live",
 		    cli_decode_summary_write_json(json_path, TRUE, "demo-device",
-					      stacks, 6, 9) == 0,
+					      stacks, 6, 9,
+						      FALSE, 0, 0, 0) == 0,
 		    "summary write should succeed");
 	json_text = read_file_text(json_path);
 	expect_true("write_decode_summary_live", json_text != NULL,
@@ -155,7 +156,8 @@ static void test_write_decode_summary_offline(void)
 
 	expect_true("write_decode_summary_offline",
 		    cli_decode_summary_write_json(json_path, FALSE, "capture.dsl",
-					      stacks, 1, 1) == 0,
+					      stacks, 1, 1,
+						      FALSE, 0, 0, 0) == 0,
 		    "offline summary write should succeed");
 	json_text = read_file_text(json_path);
 	expect_true("write_decode_summary_offline", json_text != NULL,

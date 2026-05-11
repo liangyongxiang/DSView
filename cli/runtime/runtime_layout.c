@@ -106,6 +106,11 @@ static void resolve_decoder_script_dir(struct cli_runtime_layout *layout)
 	if (!g_file_test(layout->decoder_script_dir, G_FILE_TEST_IS_DIR))
 		snprintf(layout->decoder_script_dir,
 			 sizeof(layout->decoder_script_dir),
+			 "%s/../libsigrokdecode4DSL/decoders",
+			 layout->executable_dir);
+	if (!g_file_test(layout->decoder_script_dir, G_FILE_TEST_IS_DIR))
+		snprintf(layout->decoder_script_dir,
+			 sizeof(layout->decoder_script_dir),
 			 "%s/../share/libsigrokdecode4DSL/decoders",
 			 layout->executable_dir);
 	if (!g_file_test(layout->decoder_script_dir, G_FILE_TEST_IS_DIR))

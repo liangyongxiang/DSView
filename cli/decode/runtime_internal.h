@@ -25,6 +25,9 @@ struct decode_runtime {
 	guint64 annotations_emitted;
 	uint64_t samplerate;
 	uint64_t samples_sent;
+	uint64_t decode_start_sample;
+	uint64_t decode_end_sample;
+	gboolean has_decode_window;
 	GPtrArray *stack_plans;
 	GPtrArray *stacks;
 	int *channel_order_by_index;
