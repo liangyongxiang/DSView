@@ -30,6 +30,8 @@ struct cli_command_shape {
 	const char *json_file;
 	const char *channels;
 	const char *trig_pos_arg;
+	const char *decode_start;
+	const char *decode_end;
 	gchar **gets;
 	gchar **configs;
 	gchar **pd_stacks;

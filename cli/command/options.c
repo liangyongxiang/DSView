@@ -47,6 +47,10 @@ void cli_command_option_state_clear(struct cli_option_state *state)
 	state->json_file = NULL;
 	g_free(state->trig_pos_arg);
 	state->trig_pos_arg = NULL;
+	g_free(state->decode_start);
+	state->decode_start = NULL;
+	g_free(state->decode_end);
+	state->decode_end = NULL;
 
 	state->scan_devs = FALSE;
 	state->show = FALSE;
@@ -96,7 +100,9 @@ int cli_command_options_parse(struct cli_option_state *opts, int argc, char **ar
 		OPT_DECODE_OUTPUT,
 		OPT_META,
 		OPT_JSON,
-		OPT_TRIG_POS
+		OPT_TRIG_POS,
+		OPT_DECODE_START,
+		OPT_DECODE_END
 	};
 
 	static const struct option long_options[] = {
@@ -117,6 +123,8 @@ int cli_command_options_parse(struct cli_option_state *opts, int argc, char **ar
 		{ "meta", required_argument, NULL, OPT_META },
 		{ "json", required_argument, NULL, OPT_JSON },
 		{ "trig-pos", required_argument, NULL, OPT_TRIG_POS },
+		{ "decode-start", required_argument, NULL, OPT_DECODE_START },
+		{ "decode-end", required_argument, NULL, OPT_DECODE_END },
 		{ "help", no_argument, NULL, 'h' },
 		{ NULL, 0, NULL, 0 }
 	};
@@ -198,6 +206,16 @@ int cli_command_options_parse(struct cli_option_state *opts, int argc, char **ar
 					      "--trig-pos") != 0)
 				return 1;
 			break;
+		case OPT_DECODE_START:
+			if (set_single_option(&opts->decode_start, optarg,
+					      "--decode-start") != 0)
+				return 1;
+			break;
+		case OPT_DECODE_END:
+			if (set_single_option(&opts->decode_end, optarg,
+					      "--decode-end") != 0)
+				return 1;
+			break;
 		case 'h':
 			opts->help = TRUE;
 			break;
@@ -231,8 +249,10 @@ void cli_command_options_show_help(const struct cli_option_state *opts)
 		"  %s -d DRIVER[:conn=...] [-c KEY=VALUE[:...]] "
 		    "[--samples N | --time T] [-C CHS] "
 		    "(-P STACK --decode-output FILE)... "
+		    "[--decode-start T] [--decode-end T] "
 		    "[--json FILE] [--trig-pos PCT]\n"
-		"  %s -i CAPTURE.dsl (-P STACK --decode-output FILE)... [--json FILE]\n"
+		"  %s -i CAPTURE.dsl (-P STACK --decode-output FILE)... "
+		    "[--decode-start T] [--decode-end T] [--json FILE]\n"
 		"\n"
 		"Stage-1 supported options:\n"
 		"  --scan                  Scan for devices.\n"
@@ -253,6 +273,8 @@ void cli_command_options_show_help(const struct cli_option_state *opts)
 		"  --meta FILE             Optional metadata sidecar path.\n"
 		"  --json FILE             Optional command-result JSON sidecar path.\n"
 		"  --trig-pos PCT          Pre-trigger percentage (default 50).\n"
+		"  --decode-start T        Decode window start time (e.g. 1.5s, 200ms).\n"
+		"  --decode-end T          Decode window end time (e.g. 1.5s, 200ms).\n"
 		"  -h, --help              Show this help message.\n",
 		opts->progname, opts->progname, opts->progname,
 		opts->progname, opts->progname, opts->progname,

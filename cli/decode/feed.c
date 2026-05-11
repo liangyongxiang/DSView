@@ -172,17 +172,39 @@ done:
 	return ret;
 }
 
+static gboolean group_in_decode_window(struct decode_runtime *runtime)
+{
+	if (!runtime->has_decode_window)
+		return TRUE;
+
+	if (runtime->samples_sent + 64 <= runtime->decode_start_sample)
+		return FALSE;
+
+	if (runtime->decode_end_sample > 0 &&
+	    runtime->samples_sent >= runtime->decode_end_sample) {
+		cli_decode_runtime_mark_done(runtime, FALSE, NULL);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
 static int consume_cross_logic(struct decode_runtime *runtime,
 			       const uint8_t *src, size_t src_len)
 {
 	size_t needed;
-	size_t complete_len;
+	size_t group_bytes;
+	size_t complete_bytes;
+	size_t n_groups;
+	size_t in_start;
 
 	if (!runtime || runtime->cross_group_bytes == 0)
 		return -1;
 
+	group_bytes = runtime->cross_group_bytes;
+
 	if (runtime->cross_leftover_len > 0) {
-		needed = runtime->cross_group_bytes - runtime->cross_leftover_len;
+		needed = group_bytes - runtime->cross_leftover_len;
 		if (src_len < needed) {
 			memcpy(runtime->cross_leftover + runtime->cross_leftover_len,
 			       src, src_len);
@@ -192,22 +214,70 @@ static int consume_cross_logic(struct decode_runtime *runtime,
 
 		memcpy(runtime->cross_leftover + runtime->cross_leftover_len,
 		       src, needed);
-		if (send_decode_logic_chunk(runtime, runtime->cross_leftover,
-					    runtime->cross_group_bytes) != 0)
-			return -1;
+		if (group_in_decode_window(runtime)) {
+			if (send_decode_logic_chunk(runtime, runtime->cross_leftover,
+						    group_bytes) != 0)
+				return -1;
+		} else {
+			runtime->samples_sent += 64;
+		}
 		runtime->cross_leftover_len = 0;
 		src += needed;
 		src_len -= needed;
 	}
 
-	complete_len = (src_len / runtime->cross_group_bytes) *
-	    runtime->cross_group_bytes;
-	if (complete_len > 0) {
-		if (send_decode_logic_chunk(runtime, src, complete_len) != 0)
-			return -1;
-		src += complete_len;
-		src_len -= complete_len;
+	complete_bytes = (src_len / group_bytes) * group_bytes;
+	n_groups = complete_bytes / group_bytes;
+	in_start = 0;
+
+	if (runtime->has_decode_window) {
+		while (in_start < n_groups &&
+		       runtime->samples_sent + 64 <= runtime->decode_start_sample) {
+			/* TODO: sample-level precision — skip full groups only */
+			runtime->samples_sent += 64;
+			in_start++;
+		}
+
+		if (in_start < n_groups &&
+		    runtime->decode_end_sample > 0 &&
+		    runtime->samples_sent >= runtime->decode_end_sample) {
+			cli_decode_runtime_mark_done(runtime, FALSE, NULL);
+			in_start = n_groups;
+		}
 	}
+
+	if (in_start < n_groups) {
+		size_t in_end = n_groups;
+
+		if (runtime->has_decode_window &&
+		    runtime->decode_end_sample > 0) {
+			while (in_end > in_start &&
+			       runtime->samples_sent +
+			       (in_end - in_start) * 64 > runtime->decode_end_sample) {
+				in_end--;
+			}
+		}
+
+		if (in_end > in_start) {
+			size_t send_len = (in_end - in_start) * group_bytes;
+
+			if (send_decode_logic_chunk(runtime,
+			    src + in_start * group_bytes, send_len) != 0)
+				return -1;
+		}
+
+		for (size_t g = in_end; g < n_groups; g++)
+			runtime->samples_sent += 64;
+
+		if (runtime->has_decode_window &&
+		    runtime->decode_end_sample > 0 &&
+		    runtime->samples_sent >= runtime->decode_end_sample) {
+			cli_decode_runtime_mark_done(runtime, FALSE, NULL);
+		}
+	}
+
+	src += complete_bytes;
+	src_len -= complete_bytes;
 
 	if (src_len > 0) {
 		memcpy(runtime->cross_leftover, src, src_len);

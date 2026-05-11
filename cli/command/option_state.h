@@ -22,6 +22,8 @@ struct cli_option_state {
 	gchar *meta_file;
 	gchar *json_file;
 	gchar *trig_pos_arg;
+	gchar *decode_start;
+	gchar *decode_end;
 	const char *progname;
 };
 

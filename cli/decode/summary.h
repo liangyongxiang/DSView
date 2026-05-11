@@ -10,6 +10,10 @@ int cli_decode_summary_write_json(const char *json_path,
 			      const char *source_label,
 			      GPtrArray *stacks,
 			      guint64 total_rows,
-			      guint64 total_annotations);
+			      guint64 total_annotations,
+			      gboolean has_decode_window,
+			      uint64_t decode_start_sample,
+			      uint64_t decode_end_sample,
+			      uint64_t samplerate);
 
 #endif

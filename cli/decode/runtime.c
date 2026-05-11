@@ -374,8 +374,12 @@ static int finalize_decode_output(struct decode_runtime *runtime)
 					 runtime->source_is_live,
 					 runtime->source_label,
 					 runtime->stacks,
-					  runtime->rows_written,
-					  runtime->annotations_emitted);
+					 runtime->rows_written,
+					 runtime->annotations_emitted,
+					 runtime->has_decode_window,
+					 runtime->decode_start_sample,
+					 runtime->decode_end_sample,
+					 runtime->samplerate);
 }
 
 static int build_decode_stack_plans(struct decode_runtime *runtime,
@@ -397,6 +401,71 @@ static int build_decode_stack_plans(struct decode_runtime *runtime,
 	return 0;
 }
 
+static int normalize_decode_window(struct decode_runtime *runtime)
+{
+	const struct cli_command_shape *shape = runtime->shape;
+	const char *decode_start;
+	const char *decode_end;
+	uint64_t start_ms = 0;
+	uint64_t end_ms = 0;
+	gboolean has_start = FALSE;
+	gboolean has_end = FALSE;
+
+	if (!shape)
+		return 0;
+
+	decode_start = shape->decode_start;
+	decode_end = shape->decode_end;
+
+	if (decode_start && decode_start[0]) {
+		start_ms = sr_parse_timestring(decode_start);
+		if (!start_ms && g_ascii_strcasecmp(decode_start, "0") != 0 &&
+		    decode_start[0] != '0') {
+			cli_decode_runtime_set_error(runtime,
+				"invalid --decode-start value \"%s\"", decode_start);
+			return -1;
+		}
+		has_start = TRUE;
+	}
+
+	if (decode_end && decode_end[0]) {
+		end_ms = sr_parse_timestring(decode_end);
+		if (!end_ms && g_ascii_strcasecmp(decode_end, "0") != 0 &&
+		    decode_end[0] != '0') {
+			cli_decode_runtime_set_error(runtime,
+				"invalid --decode-end value \"%s\"", decode_end);
+			return -1;
+		}
+		has_end = TRUE;
+	}
+
+	if (!has_start && !has_end)
+		return 0;
+
+	if (has_start)
+		runtime->decode_start_sample =
+			(start_ms * runtime->samplerate) / 1000ULL;
+	if (has_end)
+		runtime->decode_end_sample =
+			(end_ms * runtime->samplerate) / 1000ULL;
+
+	if (has_start && has_end &&
+	    runtime->decode_start_sample >= runtime->decode_end_sample) {
+		cli_decode_runtime_set_error(runtime,
+			"--decode-start must be before --decode-end");
+		return -1;
+	}
+
+	runtime->decode_start_sample &= ~63ULL;
+	if (runtime->decode_end_sample & 63ULL) {
+		runtime->decode_end_sample =
+			(runtime->decode_end_sample + 64ULL) & ~63ULL;
+	}
+
+	runtime->has_decode_window = TRUE;
+	return 0;
+}
+
 int cli_decode_runtime_begin_session(struct decode_runtime *runtime, GSList *channels,
 			 uint64_t samplerate, gboolean source_is_live,
 			 const char *source_label)
@@ -412,6 +481,9 @@ int cli_decode_runtime_begin_session(struct decode_runtime *runtime, GSList *cha
 		cli_decode_runtime_set_error(runtime, "input stream has invalid samplerate");
 		return -1;
 	}
+
+	if (normalize_decode_window(runtime) != 0)
+		return -1;
 
 	if (init_decode_runtime(runtime) != 0) {
 		if (!runtime->error_text)
