@@ -1,7 +1,14 @@
 #include <stdio.h>
+#include <signal.h>
 
 #include "command_internal.h"
 #include "json.h"
+
+static void on_sigterm(int sig)
+{
+    (void)sig;
+    ds_stop_collect();
+}
 
 int main(int argc, char **argv)
 {
@@ -10,6 +17,8 @@ int main(int argc, char **argv)
 	struct cli_command_shape command_shape_storage;
 	const struct cli_command_shape *shape = &command_shape_storage;
 	int rc = 1;
+
+	signal(SIGTERM, on_sigterm);
 
 	cli_command_option_state_init(&opts_storage);
 	cli_command_shape_init(&command_shape_storage);
