@@ -409,6 +409,13 @@ static void capture_datafeed_callback(const struct sr_dev_inst *sdi,
 	    runtime->channel_state;
 
 	(void)sdi;
+	if (packet->type == SR_DF_HEADER) {
+		/* sigrok session start; sampling has begun. Emit a tag so a
+		 * parent process can block until this point instead of
+		 * sleeping for a fixed pad. */
+		printf("[CAPTURE] sampling-started\n");
+		fflush(stdout);
+	}
 	if (packet->type == SR_DF_LOGIC && archive) {
 		const struct sr_datafeed_logic *logic =
 		    (const struct sr_datafeed_logic *)packet->payload;
