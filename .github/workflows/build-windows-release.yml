@@ -45,25 +45,31 @@ jobs:
         run: |
           mkdir -p release
 
-          # [DEBUG-2a3b] Inspect what the stage script actually produced
-          echo "=== build.dir contents (before copy) ==="
-          ls -la build.dir/
-          echo "=== Hosted toolcache Python x64 (where the real install lives) ==="
-          ls -la "C:/hostedtoolcache/windows/Python/3.14.5/x64" 2>&1 | head -40 || true
-          echo "=== MSYS2 UCRT64 python DLLs ==="
-          ls -la "$MINGW_PREFIX/bin" 2>&1 | grep -iE 'python|zlib' || true
-
-          # build.dir/ is populated by the `stage-build-dir` custom target: the
-          # main exe, runtime DLLs, decoders/, res/, demo/, and the Python
-          # stdlib land next to each other. The CLI resolves all of these
-          # relative to the executable's directory at runtime, so a flat
-          # layout is the correct release shape.
+          # build.dir/ is populated by the `stage-build-dir` custom target:
+          # the main exe, the Python runtime DLL the build linked against,
+          # decoders/, res/, demo/, and the Python stdlib land next to each
+          # other. The CLI resolves all of these relative to the executable's
+          # directory at runtime, so a flat layout is the correct release
+          # shape.
           for entry in build.dir/*; do
             name="$(basename "$entry")"
             case "$name" in
               dsview-cli-*-test.exe) ;;  # skip test executables
               *) cp -r "$entry" release/ ;;
             esac
+          done
+
+          # The MinGW/UCRT64 runtime DLLs the exe links against dynamically
+          # (libusb, winpthread, zlib) live in $MINGW_PREFIX/bin. Copy any
+          # that the exe still needs but the stage script didn't pick up
+          # (e.g. on installs where the Python and the toolchain are at
+          # different roots).
+          for dll in zlib1.dll libusb-1.0.dll libwinpthread-1.dll \
+                     libgcc_s_seh-1.dll libffi-8.dll libiconv-2.dll \
+                     libintl-8.dll libpcre2-8-0.dll libglib-2.0-0.dll; do
+            if [ -f "$MINGW_PREFIX/bin/$dll" ] && [ ! -f "release/$dll" ]; then
+              cp "$MINGW_PREFIX/bin/$dll" release/
+            fi
           done
 
           echo "=== Release artifacts ==="
