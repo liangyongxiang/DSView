@@ -521,11 +521,20 @@ if(DSVIEW_CLI_STANDALONE)
         get_filename_component(DS_PYTHON_INCLUDE_DIR_ABS "${_ds_python_include_dir}" ABSOLUTE)
         get_filename_component(DS_PYTHON_PREFIX "${DS_PYTHON_INCLUDE_DIR_ABS}" DIRECTORY)
         get_filename_component(DS_PYTHON_PREFIX "${DS_PYTHON_PREFIX}" DIRECTORY)
-        set(DS_PYTHON_BIN_DIR "${DS_PYTHON_PREFIX}/bin")
+        # Anchor runtime file lookups on the directory of the Python
+        # executable that CMake actually linked against. The include-dir-only
+        # derivation breaks for installs where the layout adds an extra
+        # directory level (e.g. the GitHub-hosted toolcache at .../x64/).
+        if(Python3_EXECUTABLE)
+            get_filename_component(DS_PYTHON_BIN_DIR "${Python3_EXECUTABLE}" DIRECTORY)
+        else()
+            set(DS_PYTHON_BIN_DIR "${DS_PYTHON_PREFIX}/bin")
+        endif()
         set(DS_PYTHON_LIB_DIR "${DS_PYTHON_PREFIX}/lib")
         set(DS_PYTHON_STDLIB_ZIP "${DS_PYTHON_LIB_DIR}/python${DS_PYTHON_VERSION_MAJOR}${DS_PYTHON_VERSION_MINOR}.zip")
         set(DS_PYTHON_STDLIB_DIR "${DS_PYTHON_LIB_DIR}/python${DS_PYTHON_VERSION_MAJOR}.${DS_PYTHON_VERSION_MINOR}")
         set(DS_RUNTIME_DLLS
+            python${DS_PYTHON_VERSION_MAJOR}${DS_PYTHON_VERSION_MINOR}.dll
             libpython${DS_PYTHON_VERSION_MAJOR}.${DS_PYTHON_VERSION_MINOR}.dll
             libgcc_s_seh-1.dll
             libffi-8.dll
