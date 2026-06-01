@@ -45,6 +45,12 @@ jobs:
         run: |
           mkdir -p release
 
+          # [DEBUG-2a3b] Inspect what the stage script actually produced
+          echo "=== build.dir contents (before copy) ==="
+          ls -la build.dir/
+          echo "=== MSYS UCRT64 bin (looking for runtime DLLs) ==="
+          ls "$MINGW_PREFIX/bin" | grep -E '^(python[0-9]+|zlib|libusb|libwinpthread|libglib|libgcc|libintl|libpcre|libffi|libiconv|libstdc)' || true
+
           # build.dir/ is populated by the `stage-build-dir` custom target: the
           # main exe, runtime DLLs, decoders/, res/, demo/, and the Python
           # stdlib land next to each other. The CLI resolves all of these
