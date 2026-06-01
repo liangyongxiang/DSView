@@ -18,6 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -31,7 +36,6 @@ jobs:
             mingw-w64-ucrt-x86_64-glib2
             mingw-w64-ucrt-x86_64-libusb
             mingw-w64-ucrt-x86_64-zlib
-            mingw-w64-ucrt-x86_64-python
 
       - name: Configure
         run: |
@@ -46,11 +50,10 @@ jobs:
           mkdir -p release
 
           # build.dir/ is populated by the `stage-build-dir` custom target:
-          # the main exe, the Python runtime DLL the build linked against,
-          # decoders/, res/, demo/, and the Python stdlib land next to each
-          # other. The CLI resolves all of these relative to the executable's
-          # directory at runtime, so a flat layout is the correct release
-          # shape.
+          # the main exe, decoders/, res/, demo/, and the Python stdlib land
+          # next to each other. The CLI resolves all of these relative to
+          # the executable's directory at runtime, so a flat layout is the
+          # correct release shape.
           for entry in build.dir/*; do
             name="$(basename "$entry")"
             case "$name" in
@@ -72,6 +75,47 @@ jobs:
             fi
           done
 
+          # actions/setup-python installs the runtime DLL (e.g. python313.dll)
+          # and the stdlib (Lib/) into $pythonLocation. Copy the runtime DLL
+          # next to dsview-cli.exe and the stdlib under <exe_dir>/Python/lib/
+          # so the loader and Py_SetPythonHome(<exe_dir>/Python) can both
+          # resolve at runtime.
+          if [ -n "$pythonLocation" ] && [ -d "$pythonLocation" ]; then
+            for pydll in "$pythonLocation"/python3*.dll; do
+              [ -f "$pydll" ] && cp "$pydll" release/
+            done
+
+            PY_BIN="$pythonLocation/python.exe"
+            if [ ! -x "$PY_BIN" ]; then
+              PY_BIN="python"
+            fi
+            PY_DOTTED=$("$PY_BIN" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+            PY_SHORT=$("$PY_BIN" -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')" 2>/dev/null)
+
+            if [ -n "$PY_DOTTED" ]; then
+              STDLIB_DST="release/Python/lib/python${PY_DOTTED}"
+              mkdir -p "$STDLIB_DST"
+              for src in "$pythonLocation/Lib" \
+                         "$pythonLocation/lib/python${PY_DOTTED}"; do
+                if [ -d "$src" ]; then
+                  cp -r "$src"/. "$STDLIB_DST"/
+                  echo "Staged stdlib: $src -> $STDLIB_DST"
+                  break
+                fi
+              done
+
+              for zip in "$pythonLocation"/python${PY_SHORT}.zip \
+                         "$pythonLocation"/lib/python${PY_SHORT}.zip \
+                         "$pythonLocation"/lib/python${PY_DOTTED}.zip; do
+                if [ -f "$zip" ]; then
+                  cp "$zip" "release/Python/lib/"
+                  echo "Staged stdlib zip: $zip"
+                  break
+                fi
+              done
+            fi
+          fi
+
           echo "=== Release artifacts ==="
           ls -la release/
 
@@ -80,6 +124,7 @@ jobs:
           # where the stage list drifts away from what the exe actually needs.
           echo "=== Verifying DLL closure ==="
           missing=0
+          shopt -s nocasematch
           for dll in $(objdump -p release/dsview-cli.exe 2>/dev/null \
                         | grep 'DLL Name:' \
                         | awk '{print $3}'); do
