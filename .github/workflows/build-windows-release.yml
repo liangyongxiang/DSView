@@ -39,8 +39,14 @@ jobs:
 
       - name: Configure
         run: |
+          # Pin CMake to the Python that setup-python installed. MSYS2 ships
+          # its own Python as a transitive dep, and the runner's preinstalled
+          # toolcache Python is also on PATH; without this hint find_package
+          # would link the exe against whichever it sees first (and the
+          # release would then be missing the runtime DLL we just staged).
           cmake -S cli -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPython3_EXECUTABLE="$pythonLocation/python.exe"
 
       - name: Build
         run: cmake --build build
