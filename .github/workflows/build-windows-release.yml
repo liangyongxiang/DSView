@@ -45,27 +45,47 @@ jobs:
         run: |
           mkdir -p release
 
-          # Copy exe (cmake outputs to build.dir per RUNTIME_OUTPUT_DIRECTORY)
-          cp build.dir/dsview-cli.exe release/
-
-          # Collect MinGW DLLs the exe depends on (recursive)
-          declare -A COPIED
-          copy_deps() {
-            local exe="$1"
-            local dll_dir="$MINGW_PREFIX/bin"
-            for dll in $(objdump -p "$exe" 2>/dev/null | grep 'DLL Name:' | awk '{print $3}'); do
-              local src="$dll_dir/$dll"
-              if [ -f "$src" ] && [ -z "${COPIED[$dll]}" ]; then
-                COPIED[$dll]=1
-                cp "$src" release/
-                copy_deps "$src"
-              fi
-            done
-          }
-          copy_deps "build.dir/dsview-cli.exe"
+          # build.dir/ is populated by the `stage-build-dir` custom target: the
+          # main exe, runtime DLLs, decoders/, res/, demo/, and the Python
+          # stdlib land next to each other. The CLI resolves all of these
+          # relative to the executable's directory at runtime, so a flat
+          # layout is the correct release shape.
+          for entry in build.dir/*; do
+            name="$(basename "$entry")"
+            case "$name" in
+              dsview-cli-*-test.exe) ;;  # skip test executables
+              *) cp -r "$entry" release/ ;;
+            esac
+          done
 
           echo "=== Release artifacts ==="
           ls -la release/
+
+          # Sanity check: any non-system DLL that dsview-cli.exe imports must
+          # be present in the release tree. This catches future regressions
+          # where the stage list drifts away from what the exe actually needs.
+          echo "=== Verifying DLL closure ==="
+          missing=0
+          for dll in $(objdump -p release/dsview-cli.exe 2>/dev/null \
+                        | grep 'DLL Name:' \
+                        | awk '{print $3}'); do
+            case "$dll" in
+              *.dll)
+                case "$dll" in
+                  API-MS-WIN-*|EXT-MS-WIN-*|KERNEL32.dll|USER32.dll|SHELL32.dll|ole32.dll|oleaut32.dll|GDI32.dll|WINMM.dll|WS2_32.dll|ADVAPI32.dll|CRYPT32.dll|SECUR32.dll|RPCRT4.dll|VCRUNTIME140*|MSVCP140*|CONCRT140*) ;;
+                  *) if [ ! -f "release/$dll" ]; then
+                       echo "MISSING: $dll"
+                       missing=1
+                     fi ;;
+                esac
+                ;;
+            esac
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Release is missing DLLs required by dsview-cli.exe"
+            exit 1
+          fi
+          echo "DLL closure verified."
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
