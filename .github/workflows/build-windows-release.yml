@@ -48,10 +48,8 @@ jobs:
           # [DEBUG-2a3b] Inspect what the stage script actually produced
           echo "=== build.dir contents (before copy) ==="
           ls -la build.dir/
-          echo "=== MSYS UCRT64 bin (full Python file list) ==="
-          ls -la "$MINGW_PREFIX/bin" | grep -i python || true
-          echo "=== MSYS UCRT64 bin (all DLLs containing python or zlib) ==="
-          ls -la "$MINGW_PREFIX/bin" | grep -iE 'python|zlib' || true
+          echo "=== Hosted toolcache Python bin (what CMake resolved) ==="
+          ls -la "C:/hostedtoolcache/windows/Python/3.14.5/bin" 2>&1 | grep -iE 'python|zlib' || true
 
           # build.dir/ is populated by the `stage-build-dir` custom target: the
           # main exe, runtime DLLs, decoders/, res/, demo/, and the Python
