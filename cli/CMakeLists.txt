@@ -526,7 +526,7 @@ if(DSVIEW_CLI_STANDALONE)
         set(DS_PYTHON_STDLIB_ZIP "${DS_PYTHON_LIB_DIR}/python${DS_PYTHON_VERSION_MAJOR}${DS_PYTHON_VERSION_MINOR}.zip")
         set(DS_PYTHON_STDLIB_DIR "${DS_PYTHON_LIB_DIR}/python${DS_PYTHON_VERSION_MAJOR}.${DS_PYTHON_VERSION_MINOR}")
         set(DS_RUNTIME_DLLS
-            libpython${DS_PYTHON_VERSION_MAJOR}.${DS_PYTHON_VERSION_MINOR}.dll
+            python${DS_PYTHON_VERSION_MAJOR}${DS_PYTHON_VERSION_MINOR}.dll
             libgcc_s_seh-1.dll
             libffi-8.dll
             zlib1.dll
