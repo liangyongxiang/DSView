@@ -42,8 +42,8 @@ jobs:
         run: |
           mkdir -p release
 
-          # Copy exe
-          cp build/dsview-cli.exe release/
+          # Copy exe (cmake outputs to build.dir per RUNTIME_OUTPUT_DIRECTORY)
+          cp build.dir/dsview-cli.exe release/
 
           # Collect MinGW DLLs the exe depends on (recursive)
           declare -A COPIED
@@ -59,7 +59,7 @@ jobs:
               fi
             done
           }
-          copy_deps "build/dsview-cli.exe"
+          copy_deps "build.dir/dsview-cli.exe"
 
           echo "=== Release artifacts ==="
           ls -la release/
