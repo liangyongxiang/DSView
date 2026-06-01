@@ -35,7 +35,7 @@ function(dsview_cli_prefix_sources out_var source_root)
 endfunction()
 
 function(dsview_cli_resolve_python)
-    find_package(Python3 COMPONENTS Development QUIET)
+    find_package(Python3 COMPONENTS Interpreter Development QUIET)
 
     if(Python3_FOUND)
         set(PY_LIB ${Python3_LIBRARIES} PARENT_SCOPE)
@@ -516,6 +516,9 @@ if(DSVIEW_CLI_STANDALONE)
     endif()
 
     if(WIN32)
+        message(STATUS "[DEBUG-2a3b] Python3_EXECUTABLE=${Python3_EXECUTABLE}")
+        message(STATUS "[DEBUG-2a3b] Python3_INCLUDE_DIRS=${Python3_INCLUDE_DIRS}")
+        message(STATUS "[DEBUG-2a3b] Python3_RUNTIME_LIBRARY_DIRS=${Python3_RUNTIME_LIBRARY_DIRS}")
         set(_ds_python_include_dir ${DS_PYTHON_INCLUDE_DIR})
         list(GET _ds_python_include_dir 0 _ds_python_include_dir)
         get_filename_component(DS_PYTHON_INCLUDE_DIR_ABS "${_ds_python_include_dir}" ABSOLUTE)
