@@ -35,7 +35,7 @@ function(dsview_cli_prefix_sources out_var source_root)
 endfunction()
 
 function(dsview_cli_resolve_python)
-    find_package(Python3 COMPONENTS Development QUIET)
+    find_package(Python3 COMPONENTS Interpreter Development QUIET)
 
     if(Python3_FOUND)
         set(PY_LIB ${Python3_LIBRARIES} PARENT_SCOPE)
