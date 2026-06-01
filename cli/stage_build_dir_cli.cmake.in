@@ -9,6 +9,13 @@ set(DS_PYTHON_STDLIB_ZIP "@DS_PYTHON_STDLIB_ZIP@")
 set(DS_PYTHON_STDLIB_DIR "@DS_PYTHON_STDLIB_DIR@")
 set(DS_RUNTIME_DLLS "@DS_RUNTIME_DLLS@")
 
+# [DEBUG-2a3b]
+message(STATUS "[stage] DS_STAGE_DIR=${DS_STAGE_DIR}")
+message(STATUS "[stage] DS_PYTHON_BIN_DIR=${DS_PYTHON_BIN_DIR}")
+message(STATUS "[stage] DS_RUNTIME_DLLS=${DS_RUNTIME_DLLS}")
+message(STATUS "[stage] DS_PYTHON_STDLIB_ZIP=${DS_PYTHON_STDLIB_ZIP}")
+message(STATUS "[stage] DS_PYTHON_STDLIB_DIR=${DS_PYTHON_STDLIB_DIR}")
+
 function(ds_remove_path path)
     if(EXISTS "${path}" OR IS_SYMLINK "${path}")
         file(REMOVE_RECURSE "${path}")
