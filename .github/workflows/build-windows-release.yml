@@ -35,8 +35,15 @@ jobs:
 
       - name: Configure
         run: |
+          # Pin CMake to the MSYS2 Python. Without this hint, find_package
+          # picks up the runner's preinstalled toolcache Python
+          # (C:\hostedtoolcache\windows\Python\<ver>\x64\), whose layout
+          # doesn't match the stage script's ${prefix}/bin/ and
+          # ${prefix}/lib/pythonX.Y/ assumptions, so the runtime DLLs
+          # and stdlib never get staged.
           cmake -S cli -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPython3_EXECUTABLE="$MINGW_PREFIX/bin/python.exe"
 
       - name: Build
         run: cmake --build build
